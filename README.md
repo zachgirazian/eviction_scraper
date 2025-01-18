@@ -7,4 +7,4 @@ Below is a Tableau dashboard showing an analysis of the eviction data.
 ![porftiolio_dashbord_pic_github](https://github.com/user-attachments/assets/30583ef1-1f66-46c6-a475-b5beca0bed3b)
 
 
-[[Click here for Tableau dashboard](https://public.tableau.com/app/profile/zach.girazian/viz/evictions_17369551510970/evictions_Iowa)
+[Click here for Tableau dashboard](https://public.tableau.com/app/profile/zach.girazian/viz/evictions_17369551510970/evictions_Iowa)
