@@ -4,7 +4,8 @@ A web scraper that extracts weekly housing eviction filings for the state of Iow
 The scraped data was used to generate statistics regarding evictions in Iowa and by legal professionals in eviction court hearings.
 
 Below is a Tableau dashboard showing an analysis of the eviction data.
-![porftiolio_dashbord_pic_github](https://github.com/user-attachments/assets/e13013bf-a2bc-4637-a948-547147bec0c6)
+![porftiolio_dashbord_pic_github](https://github.com/user-attachments/assets/828414b6-e319-4529-ad94-6e92e06ad5b5)
+
 
 
 [Click here for Tableau dashboard](https://public.tableau.com/app/profile/zach.girazian/viz/evictions_17369551510970/evictions_Iowa)
