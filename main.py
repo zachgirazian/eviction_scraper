@@ -1,14 +1,13 @@
-if True:
-    import pandas as pd
-    import numpy as np
-    import requests
-    from bs4 import BeautifulSoup
-    import os
-    from astropy.time import Time
-    from time import sleep
-    import re
-    from random import randint
-    import datetime
+import pandas as pd
+import numpy as np
+import requests
+from bs4 import BeautifulSoup
+import os
+from astropy.time import Time
+from time import sleep
+import re
+from random import randint
+import datetime
     
 # Initial login using Napier and extract login cookie
 def login(username,password):
