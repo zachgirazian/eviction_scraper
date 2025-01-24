@@ -1,3 +1,5 @@
+# This proprietary program has been edited to prevent external users.
+
 import pandas as pd
 import numpy as np
 import requests
