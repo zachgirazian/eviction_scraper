@@ -131,16 +131,13 @@ def extract_cases(thesoup,dict,cookie,countyID,startDate,endDate):
 ###########################################################################################################
 # ** DIRECTIONS ** #
 ###########################################################################################################
-
 # 1. Change todays_date to today's date (friday for friday pull)
 todays_date = 'YYYYMMDD'
 last_pull_date = 'YYYYMMDD'
 
-# 2. Choose if want to scrape or not. Once all data scraped can trun scraping off to just work on updating spreadsheet
-DO_SCRAPE = False
+# 2. Once all data scraped can turn scraping off to just work on updating spreadsheet
 
 # 3. Go on sharepoint, download the master spreadhseet, run fed_scrape_sharepoint. Save the new file as the same filename and reupload to sharepoint.
-
 
 ###########################################################################################################
 # Set directory and date range for this week's pull, load county list and id's
@@ -170,160 +167,136 @@ AllcountyList = pd.read_pickle('counties_list_dataFrame.pkl')
 ###########################################################################################################
 # Start Scrape
 ###########################################################################################################
-if DO_SCRAPE:
-    ###########################################################################################################
-    # If crashes midscrape can use this to start at specific county and don't have to rescrape everything again
-    ###########################################################################################################
-    # set to True if restarting midscrape because of crash
-    restart = False
-    lastGoodCounty = 'pocahontas' # out the name of the last county where the scrape was successfull
 
-    # set up for restart or not restart - load dictionary and set new county to start at
-    if restart:
-        print('\n \n Restarting scrape \n last good county: ' + lastGoodCounty)
+###########################################################################################################
+# If crashes midscrape can use this to start at specific county and don't have to rescrape everything again
+###########################################################################################################
+# set to True if restarting midscrape because of crash
+restart = False
+lastGoodCounty = 'pocahontas' # out the name of the last county where the scrape was successfull
+
+# set up for restart or not restart - load dictionary and set new county to start at
+if restart:
+    print('\n \n Restarting scrape \n last good county: ' + lastGoodCounty)
+    
+    # load dictionary with results before crash
+    aa =  np.load(dir + 'temp_dict2.npy',allow_pickle=True)
+    dict = {'county':aa.item().get('county'),'case':aa.item().get('case'),'parties':aa.item().get('parties'),'tenant':[],'date':aa.item().get('date')}
+    
+    # if the dictionary had the county where it crashed then remove it (dictionary should only have successfully scraped counties)
+    inds = np.where(np.array(dict['county']) == lastGoodCounty)[0]
+    for key in dict:
+        dict[key] = dict[key][0:inds[-1]+1]
         
-        # load dictionary with results before crash
-        aa =  np.load(dir + 'temp_dict2.npy',allow_pickle=True)
-        dict = {'county':aa.item().get('county'),'case':aa.item().get('case'),'parties':aa.item().get('parties'),'tenant':[],'date':aa.item().get('date')}
+    # Trim county list to remove all counties that have already been scraped
+    countyList = AllcountyList[AllcountyList.county_name[AllcountyList.county_name == lastGoodCounty].index.tolist()[0]+1:]
+    
+    print('\n \n Scraping these counties: \n')
+    print(countyList)
+    
+else:
+    # make dictionary to hold new FEDs
+    dict = {'county':[],'case':[],'parties':[],'tenant':[],'date':[]}
+    countyList = AllcountyList # scrape all counties
+
+############
+# Scrape
+############
+# Login to website and extract cookie (uses Napier)
+username='username'
+password = 'password'
+reader, cookies = login(username,password)
+
+# Search and parse cases from each county using request - loop trhough each county
+for ind in countyList.index:
+    
+    # Get county name and ids
+    countyName = countyList['county_name'][ind]
+    county_id = countyList['countyid'][ind]
+    print(countyName,county_id)
+    
+    ######################################################################################################
+    # polk county often has so many cases that a entire year query results in error. For Polk do
+    # two querys with dates split
+    # ZG May 5th, 2024: The error doesn't say "has more than 100 records" anymore it just says:
+    # Application Error.  Please retry your last action again later.
+    # If the problem persists, please contact 
+    # Solution - always have polk county be a double search
+    ######################################################################################################
+    if county_id == '05771': # Polk county
+    
+        # 1st query: fromDate to fromDate + 7 days
+        fromDateQ1 = fromDate
+        toDateQ1 = (Time.strptime(fromDate,'%m/%d/%Y').datetime + datetime.timedelta(days=7)).strftime('%m/%d/%Y')
         
-        # if the dictionary had the county where it crashed then remove it (dictionary should only have successfully scraped counties)
-        inds = np.where(np.array(dict['county']) == lastGoodCounty)[0]
-        for key in dict:
-            dict[key] = dict[key][0:inds[-1]+1]
+        # new request, date range 1
+        soup = request(cookies,county_id,fromDateQ1,toDateQ1)
+        
+        # extract cases, date range 1
+        dict = extract_cases(soup,dict,cookies,county_id,fromDateQ1,toDateQ1)
+        
+        # 2nd query: (fromDate + 7 days) to (fromDate + 7 days + 1 year)
+        fromDateQ2 = toDateQ1
+        toDateQ2 = (Time.strptime(fromDateQ2,'%m/%d/%Y').datetime + datetime.timedelta(days=365)).strftime('%m/%d/%Y')
+        
+        # new request, date range 2
+        soup = request(cookies,county_id,fromDateQ2,toDateQ2)
+        
+        # extract cases, date range 2
+        dict = extract_cases(soup,dict,cookies,county_id,fromDateQ2,toDateQ2)
+        
+    else: # not Polk county
+        # Search for FED cases in specific county and date range and get soup 
+        soup = request(cookies,county_id,fromDate,toDate)
+
+        # Check if there are no records - if so, don't store just print 
+        if 'No records were found matching your search criteria' in soup.text:
+            print('\n \n No cases found for ' + countyName + ' county \n \n')
+            continue
             
-        # Trim county list to remove all counties that have already been scraped
-        countyList = AllcountyList[AllcountyList.county_name[AllcountyList.county_name == lastGoodCounty].index.tolist()[0]+1:]
-        
-        print('\n \n Scraping these counties: \n')
-        print(countyList)
-        
-    else:
-        # make dictionary to hold new FEDs
-        dict = {'county':[],'case':[],'parties':[],'tenant':[],'date':[]}
-        countyList = AllcountyList # scrape all counties
+        # Extract relevant data (case #, date, parties, etc.) and store in arrays
+        dict = extract_cases(soup,dict,cookies,county_id,fromDate,toDate)
+    
+    # Pause to not overwhelm website
+    sleepTime = randint(5,15)
+    print('\n \n' + countyName)
+    print('\n Sleeping for ' + str(sleepTime) + ' seconds')
+    sleep(sleepTime)
+    
+    # temperarily save progress
+    np.save(dir + 'temp_dict2', dict)
+    
+    # Early break for debugging
+    #if ind > 3: break
 
+# Logoff
+reader.logoff()
 
-    # debug test a single county
-    # countyList = countyList[countyList['county_name']=='polk']
+##############################################################################################
+# Scraping is over, time to add tenant name and save as pandas
+##############################################################################################
+# Fill in tenant array by extrtacting tenant name from parties
+nameTemp = dict['parties']
+name = [str(n1).lower() for n1 in nameTemp]
+#name = np.char.lower(np.array(str(dict['parties']))) # make lowercase
+delims = ' v ', ' vs ', ' v. ', ' vs. ' # sometimes this picks up a middle initial that s "V"
+for name1 in name:
+    # flexible string search to split tenant and landlord
+    regex_pattern = '|'.join(map(re.escape, delims))
+    dict['tenant'].append(re.split(regex_pattern, name1, 0)[-1])    
 
+# Make pandas, sort
+df = pd.DataFrame(dict)
+df = df.sort_values('county')
+df = df.reset_index()
 
+# Save newly scraped cases
+df.to_pickle(dir + 'new_cases.pkl')
 
-    ############
-    # Scrape
-    ############
-
-    # Login to website and extract cookie (uses Napier)
-    username='username'
-    password = 'password'
-    reader, cookies = login(username,password)
-
-    # Search and parse cases from each county using request - loop trhough each county
-    for ind in countyList.index:
-        
-        # Get county name and ids
-        countyName = countyList['county_name'][ind]
-        county_id = countyList['countyid'][ind]
-        print(countyName,county_id)
-        
-        ######################################################################################################
-        # polk county often has so many cases that a entire year query results in error. For Polk do
-        # two querys with dates split
-        # ZG May 5th, 2024: The error doesn't say "has more than 100 records" anymore it just says:
-        # Application Error.  Please retry your last action again later.
-        # If the problem persists, please contact 
-        # Solution - always have polk county be a double search
-        ######################################################################################################
-        if county_id == '05771': # Polk county
-        
-            # 1st query: fromDate to fromDate + 7 days
-            fromDateQ1 = fromDate
-            toDateQ1 = (Time.strptime(fromDate,'%m/%d/%Y').datetime + datetime.timedelta(days=7)).strftime('%m/%d/%Y')
-            
-            # new request, date range 1
-            soup = request(cookies,county_id,fromDateQ1,toDateQ1)
-            
-            # extract cases, date range 1
-            dict = extract_cases(soup,dict,cookies,county_id,fromDateQ1,toDateQ1)
-            
-            # 2nd query: (fromDate + 7 days) to (fromDate + 7 days + 1 year)
-            fromDateQ2 = toDateQ1
-            toDateQ2 = (Time.strptime(fromDateQ2,'%m/%d/%Y').datetime + datetime.timedelta(days=365)).strftime('%m/%d/%Y')
-            
-            # new request, date range 2
-            soup = request(cookies,county_id,fromDateQ2,toDateQ2)
-            
-            # extract cases, date range 2
-            dict = extract_cases(soup,dict,cookies,county_id,fromDateQ2,toDateQ2)
-            
-            #count = 0
-            #for ll in range(len(dict['county'])):
-            #    if dict['county'][ll] == 'polk':
-            #        print(dict['case'][ll])
-            #        count = count+1
-            
-        else: # not Polk county
-        
-            # Search for FED cases in specific county and date range and get soup 
-            soup = request(cookies,county_id,fromDate,toDate)
-
-            # Check if there are no records - if so, don't store just print 
-            if 'No records were found matching your search criteria' in soup.text:
-                #dict['county'].append(countyName)
-                #dict['case'].append(-1)
-                #dict['parties'].append(-1)
-                #dict['date'].append(-1)
-                print('\n \n No cases found for ' + countyName + ' county \n \n')
-                continue
-                
-            # Extract relevant data (case #, date, parties, etc.) and store in arrays
-            dict = extract_cases(soup,dict,cookies,county_id,fromDate,toDate)
-        
-        # Pause to not overwhelm website
-        sleepTime = randint(5,15)
-        print('\n \n' + countyName)
-        print('\n Sleeping for ' + str(sleepTime) + ' seconds')
-        sleep(sleepTime)
-        
-        # temperarily save progress
-        np.save(dir + 'temp_dict2', dict)
-        
-        # Early break for debugging
-        #if ind > 3: break
-
-    # Logoff
-    reader.logoff()
-
-
-    ##############################################################################################
-    # Scraping is over, time to add tenant name and save as pandas
-    ##############################################################################################
-    # Fill in tenant array by extrtacting tenant name from parties
-    nameTemp = dict['parties']
-    name = [str(n1).lower() for n1 in nameTemp]
-    #name = np.char.lower(np.array(str(dict['parties']))) # make lowercase
-    delims = ' v ', ' vs ', ' v. ', ' vs. ' # sometimes this picks up a middle initial that s "V"
-    for name1 in name:
-        # flexible string search to split tenant and landlord
-        regex_pattern = '|'.join(map(re.escape, delims))
-        dict['tenant'].append(re.split(regex_pattern, name1, 0)[-1])    
-
-    # Make pandas, sort
-    df = pd.DataFrame(dict)
-    df = df.sort_values('county')
-    df = df.reset_index()
-
-    # Save newly scraped cases
-    df.to_pickle(dir + 'new_cases.pkl')
-    stop()
-
-
-
-# if already scraped, load scraped dataframe
-if not DO_SCRAPE:
-    df = pd.read_pickle(dir + 'new_cases.pkl')
-    df = df.sort_values('county')
-    df = df.reset_index(drop=True)
-
+# Load scraped dataframe
+df = pd.read_pickle(dir + 'new_cases.pkl')
+df = df.sort_values('county')
+df = df.reset_index(drop=True)
 
 # count number of new entries found this week
 dfCounts = df.groupby('county').count()['case']
@@ -334,25 +307,17 @@ print(dfCounts.to_string())
 # Load previous week's master spreadsheet, add new entries by checking for duplicate case #'s 
 # and keep most recent hearing date
 ##############################################################################################
-
 # load sheet updated through last week's pull
 dfold = pd.read_csv(old_filename)
 dfold = dfold.loc[:, ~dfold.columns.str.contains('^Unnamed')] #remove unamed rows
 dfold['update'] = pd.Series() # to store notes on if date updated or if new case for this week and remove last weeks note
 
-
 # Remove second space that appears in case # string in scraped cases - also do for master df too just in case (match based on case # below so needed)
 df['case'] = df['case'].str.split(' ',n=1).str[0].str.strip() + ' ' + df['case'].str.split(' ',n=1).str[-1].str.strip()
 dfold['case'] = dfold['case'].str.split(' ',n=1).str[0].str.strip() + ' ' +  dfold['case'].str.split(' ',n=1).str[-1].str.strip()
 
-
 # make copy for appending new cases just scraped
 dfnew = dfold.copy(deep=True)
-
-
-# df = newly scraped cases
-# dfold = spreadsheet from last week
-# dfnew = dfold but updating with new entries - ends up beng final product
 
 # loop though each case just pulled from scrape, check if in old sheet. If not, add it. If is, keep latest date
 for index, row in df.iterrows():
@@ -390,7 +355,6 @@ for index, row in df.iterrows():
         else:
             print('DUPLICATE W/ SAME DATE - SKIPPING')
     
-
 # reset dfnew index and sort by county
 dfnew['county'] = dfnew['county'].str.lower() # lower case counties
 dfnew = dfnew.sort_values('county',ignore_index=True)
